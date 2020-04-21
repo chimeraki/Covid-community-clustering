@@ -1,0 +1,226 @@
+---
+title: "corrNetwork"
+author: ""
+includes:
+  in_header:
+    - \usepackage{lmodern}
+output:
+  pdf_document:
+    fig_caption: yes
+    fig_height: 6
+    fig_width: 6
+    toc: yes
+  html_document:
+    fig_caption: yes
+    fig_height: 6
+    fig_width: 6
+    highlight: tango
+    theme: journal
+---
+
+
+
+
+
+
+Call in required libraries
+
+```{r}
+
+library(plyr)
+library(dplyr
+library(igraph)
+library(maps)
+
+```
+
+
+
+Read data in and format date 
+
+```{r}
+
+covid <- read.csv('total-confirmed-cases-of-covid-19-per-million-people.csv')
+covid$Date <- as.Date(covid$Date, '%b %d, %Y')
+colnames(covid)[4] <- 'casesPerMil'
+
+covid <- filter(covid, Code != '')
+covid <- filter(covid, Code != 'OWID_WRL')
+covid <- filter(covid, Code != 'OWID_KOS')
+covid <- filter(covid, Code != 'YEM')
+
+```
+
+
+
+
+
+```{r}
+
+# get data for each country where the casesPerMil exceeds 0.1
+
+countries <- unique(covid$Code)
+datList <- lapply(countries, function(x){
+	tmp <- filter(covid, Code==x)
+	tmp <- tmp[which(tmp$casesPerMil > 0.1)[1]:nrow(tmp),]
+	
+	return(tmp)
+})
+names(datList) <- countries
+
+
+# filter to a minimum of 20 observations for a given country
+datList2 <- datList[which(plyr::laply(datList, nrow) >= 20)]
+
+
+# format it into a data.frame
+datDF <- plyr::ldply(datList2, function(x){
+	return(x$casesPerMil[1:20])
+})
+rownames(datDF) <- datDF$.id
+datDF$.id <- NULL
+datDF <- t(datDF)
+datDF <- datDF[,order(colnames(datDF))]
+
+```
+
+
+
+
+
+
+
+# make a correlation matrix (I was too dumb to think about normalized difference here)
+
+```{r}
+
+corMat <- cor(datDF, method='spearman')
+
+corMat[corMat < 0.5] <- NA
+diag(corMat) <- NA
+
+
+# read it into igraph
+corG <- igraph::graph_from_adjacency_matrix(corMat, mode='undirected', weighted=TRUE)
+
+```
+
+
+
+# trying to make normalized difference matrix here
+
+```{r}
+
+datDF2 <- apply(datDF, 2, function(x){
+	x / max(x)
+})
+
+
+
+dif <- function(x,y){
+	sum(abs(x-y))
+}
+
+pairs <- expand.grid(1:ncol(datDF2),1:ncol(datDF2))
+
+tmp <- c()
+for(i in 1:nrow(pairs)){
+	tmp[i] <- dif(datDF2[,pairs[i,1]], datDF2[,pairs[i,2]])
+}
+
+diffMat <- matrix(tmp, ncol=191, nrow=191)
+
+# read it into igraph
+diffG <- igraph::graph_from_adjacency_matrix(diffMat, mode='undirected', weighted=TRUE)
+
+```
+
+
+
+
+# data is from the CoordinateCleaner R package, but is originally from https://www.cia.gov/library/publications/the-world-factbook/ and http://thematicmapping.org/downloads/world_borders.php.
+
+
+```{r}
+
+locs <- load('countryref.rda')
+locs <- locs[!duplicated(locs$iso3),]
+locs <- locs[which(locs$iso3 %in% colnames(corMat)),]
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+#comms <- cluster_leading_eigen(corG)
+comms <- cluster_louvain(corG)
+colz <- viridis::viridis(max(comms$membership))
+
+
+#pdf('corMap.pdf', height=6, width=12)
+WM <- maps::map(col=grey(0.1, 0.9))
+
+plot.igraph(corG, vertex.label=NA, 
+	add=TRUE, 
+	vertex.size=500, 
+	vertex.color=colz[membership(comms)],
+	edge.color=grey(0.1,0.5),
+	edge.width=1,
+  layout=as.matrix(locs[,c("centroid.lon", "centroid.lat")]),
+  rescale = FALSE)
+
+dev.off()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+I think I just calculated the normalized difference wrong or something. One big cluster of bullshit.
+
+```{r}
+
+comms2 <- cluster_louvain(diffG)
+colz <- viridis::viridis(max(comms2$membership))
+
+
+#pdf('diffMap.pdf', height=6, width=12)
+WM <- maps::map(col=grey(0.1, 0.9))
+
+plot.igraph(diffG, 
+	vertex.label=NA, 
+	add=TRUE, 
+	vertex.size=500, 
+	vertex.color=colz[membership(comms2)],
+	edge.color=grey(0.1,0.5),
+	edge.width=1,
+  layout=as.matrix(locs[,c("centroid.lon", "centroid.lat")]),
+  rescale = FALSE)
+
+dev.off()
+
+```
+
+
+
+
+
