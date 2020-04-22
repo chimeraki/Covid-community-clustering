@@ -23,14 +23,17 @@ def mse(Y, YH):
 def nor(Y):
      return np.square(Y).mean()
 
-path = 'World_cases.csv'
-df_conf = pd.read_csv(path).values
-
-#delete NZ and TUR with blank data and countries with very few days of data
-S=np.delete(df_conf,[7,10,15],axis=0) 
-count=list(S[:,0])
-S=S[:,1:]
-
+path = 'Countries.csv'
+df_conf = pd.read_csv(path).values.T[1:,:]
+count=list(pd.read_csv(path).columns)[1:]
+del_count=[]
+for i in range(len(count)):
+     if np.sum(df_conf[i]>0)<50: #delete countried with less than threhsold data points
+          del_count.append(i)
+          
+     
+S=np.delete(df_conf,del_count,axis=0) 
+count=np.delete(count,del_count)
 #removing zeros in data and converting all data in equal length
 
 N=shape(S)[0]
@@ -73,5 +76,5 @@ country_comm = dict(zip(count, values))
 figure()
 mapping=dict(zip(H,count))
 H = nx.relabel_nodes(H, mapping)
-nx.draw_spring(H, cmap = plt.get_cmap('jet'), node_color = values, node_size=100,with_labels=True, width = 0.1)
-savefig('plot.pdf')
+nx.draw_spring(H, cmap = plt.get_cmap('jet'), node_color = values, node_size=100,with_labels=True, width = 0.05)
+savefig('plot.jpg')
